@@ -1,5 +1,7 @@
 VERSION = 3.1.0
 
+SOURCES = source/app.d source/xasm/package.d
+
 prefix = /usr/local
 bindir = $(prefix)/bin
 mandir = $(prefix)/share/man/man1
@@ -8,8 +10,8 @@ SEVENZIP = 7z a -mx=9 -bd
 
 all: xasm xasm.html
 
-xasm: source/app.d
-	dmd -of$@ -O -release $<
+xasm: $(SOURCES)
+	dmd -of$@ -O -release $^
 
 xasm.html: xasm.1.txt
 	asciidoc -o - $< | sed -e "s/527bbd;/20a0a0;/" >$@
@@ -49,8 +51,8 @@ osx: ../xasm-$(VERSION)-osx.dmg
 ../xasm-$(VERSION)-osx.dmg: osx/xasm osx/bin
 	hdiutil create -volname xasm-$(VERSION)-osx -srcfolder osx -imagekey zlib-level=9 -ov $@
 
-osx/xasm: source/app.d
-	mkdir -p osx && dmd -of$@ -O -release -m32 -L-macosx_version_min -L10.6 $< && rm -f osx/xasm.o
+osx/xasm: $(SOURCES)
+	mkdir -p osx && dmd -of$@ -O -release -m32 -L-macosx_version_min -L10.6 $^ && rm -f osx/xasm.o
 
 osx/bin:
 	mkdir -p osx && ln -s /usr/bin $@
