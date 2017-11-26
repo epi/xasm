@@ -2654,12 +2654,13 @@ version(unittest) ubyte[] testInstruction(string l) {
 }
 
 unittest {
-	assert(testInstruction("nop") == cast(ubyte[]) x"ea");
-	assert(testInstruction("add (5,0)") == cast(ubyte[]) x"18a2006105");
-	assert(testInstruction("mwa #$abcd $1234") == cast(ubyte[]) x"a9cd8d3412a9ab8d3512");
-	assert(testInstruction("dta 5,d'Foo'*,a($4589)") == cast(ubyte[]) x"05a6efef8945");
+	import std.string : representation;
+	assert(testInstruction("nop") == x"ea".representation);
+	assert(testInstruction("add (5,0)") == x"18a2006105".representation);
+	assert(testInstruction("mwa #$abcd $1234") == x"a9cd8d3412a9ab8d3512".representation);
+	assert(testInstruction("dta 5,d'Foo'*,a($4589)") == x"05a6efef8945".representation);
 	assert(testInstruction("dta r(1,12,123,1234567890,12345678900000,.5,.03,000.1664534589,1e97)")
-	 == cast(ubyte[]) x"400100000000 401200000000 410123000000 441234567890 461234567890 3f5000000000 3f0300000000 3f1664534589 701000000000");
+	 == x"400100000000 401200000000 410123000000 441234567890 461234567890 3f5000000000 3f0300000000 3f1664534589 701000000000".representation);
 }
 
 void assemblyPair() {
