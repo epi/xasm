@@ -767,7 +767,7 @@ void readValue() {
 	valOpStack.length = 0;
 }
 
-debug int testValue(string l) {
+version(unittest) int testValue(string l) {
 	line = l;
 	column = 0;
 	readValue();
@@ -1035,7 +1035,7 @@ void readAbsoluteAddrMode() {
 	addrMode = AddrMode.ABSOLUTE;
 }
 
-debug AddrMode testAddrMode(string l) {
+version(unittest) AddrMode testAddrMode(string l) {
 	line = l;
 	column = 0;
 	readAddrMode();
@@ -1177,10 +1177,10 @@ void listLabelTable() {
 	}
 }
 
-debug ubyte[] objectBuffer;
+version(unittest) ubyte[] objectBuffer;
 
 void objectByte(ubyte b) {
-	debug {
+	version(unittest) {
 		objectBuffer ~= b;
 	} else {
 		assert(pass2);
@@ -1236,11 +1236,11 @@ void putByte(ubyte b) {
 			}
 		}
 	}
-	debug {
+	version(unittest) {
 		objectByte(b);
 	}
 	if (pass2) {
-		debug {
+		version(unittest) {
 		} else {
 			objectByte(b);
 		}
@@ -2641,7 +2641,7 @@ void assemblyInstruction(string instruction) {
 	skipping = false;
 }
 
-debug ubyte[] testInstruction(string l) {
+version(unittest) ubyte[] testInstruction(string l) {
 	objectBuffer.length = 0;
 	line = l;
 	column = 0;
@@ -2686,7 +2686,7 @@ void assemblyPair() {
 }
 
 void assemblyLine() {
-	debug {
+	version(unittest) {
 		writeln(line);
 	}
 	lineNo++;
