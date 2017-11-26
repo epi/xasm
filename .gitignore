@@ -1,8 +1,12 @@
 xasm
 xasm.exe
 xasm.obj
+xasm.o
 xasm.html
 xasm.1
+xasm-test-library
 MANIFEST
+/xasm.dproj
 /.project
 /.gitignore
+/.dub
