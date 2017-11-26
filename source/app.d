@@ -16,7 +16,7 @@
 // free or for profit.
 // These rights, on this notice, rely.
 
-import xasm;
+import xasm : Xasm, AssemblyError;
 
 import std.stdio;
 import std.algorithm;
@@ -31,16 +31,8 @@ pure bool isOption(string arg) {
 	return false;
 }
 
-void setOption(char letter) {
-	assert(letter >= 'a' && letter <= 'z');
-	if (options[letter - 'a']) {
-		exitCode = 3;
-		return;
-	}
-	options[letter - 'a'] = true;
-}
-
 int main(string[] args) {
+	Xasm xasm = new Xasm;
 	for (int i = 1; i < args.length; i++) {
 		string arg = args[i];
 		if (isOption(arg)) {
@@ -55,8 +47,8 @@ int main(string[] args) {
 			case 'q':
 			case 'u':
 				if (arg.length != 2)
-					exitCode = 3;
-				setOption(letter);
+					xasm.exitCode = 3;
+				xasm.setOption(letter);
 				break;
 			case 'd':
 				string definition = null;
@@ -66,13 +58,13 @@ int main(string[] args) {
 				} else if (i + 1 < args.length && !isOption(args[i + 1]))
 					definition = args[++i];
 				if (definition is null || find(definition, '=').empty)
-					exitCode = 3;
-				commandLineDefinitions ~= definition;
+					xasm.exitCode = 3;
+				xasm.commandLineDefinitions ~= definition;
 				break;
 			case 'l':
 			case 't':
 			case 'o':
-				setOption(letter);
+				xasm.setOption(letter);
 				string filename = null;
 				if (arg[0] == '/') {
 					if (arg.length >= 3 && arg[2] == ':')
@@ -80,24 +72,24 @@ int main(string[] args) {
 				} else if (i + 1 < args.length && !isOption(args[i + 1]))
 					filename = args[++i];
 				if (filename is null && (letter == 'o' || arg.length != 2))
-					exitCode = 3;
-				optionParameters[letter - 'a'] = filename;
+					xasm.exitCode = 3;
+				xasm.optionParameters[letter - 'a'] = filename;
 				break;
 			default:
-				exitCode = 3;
+				xasm.exitCode = 3;
 				break;
 			}
 			continue;
 		}
-		if (sourceFilename !is null)
-			exitCode = 3;
-		sourceFilename = arg;
+		if (xasm.sourceFilename !is null)
+			xasm.exitCode = 3;
+		xasm.sourceFilename = arg;
 	}
-	if (sourceFilename is null)
-		exitCode = 3;
-	if (!getOption('q'))
-		writeln(TITLE);
-	if (exitCode != 0) {
+	if (xasm.sourceFilename is null)
+		xasm.exitCode = 3;
+	if (!xasm.getOption('q'))
+		writeln(xasm.TITLE);
+	if (xasm.exitCode != 0) {
 		write(
 `Syntax: xasm source [options]
 /c             Include false conditionals in listing
@@ -111,30 +103,30 @@ int main(string[] args) {
 /t[:filename]  List label table
 /u             Warn of unused labels
 `);
-		return exitCode;
+		return xasm.exitCode;
 	}
 	try {
-		assemblyPass();
-		pass2 = true;
-		assemblyPass();
-		if (getOption('t') && labelTable.length > 0)
-			listLabelTable();
+		xasm.assemblyPass();
+		xasm.pass2 = true;
+		xasm.assemblyPass();
+		if (xasm.getOption('t') && xasm.labelTable.length > 0)
+			xasm.listLabelTable();
 	} catch (AssemblyError e) {
-		warning(e.msg, true);
-		exitCode = 2;
+		xasm.warning(e.msg, true);
+		xasm.exitCode = 2;
 	}
-	listingStream.close();
-	objectStream.close();
-	if (exitCode <= 1) {
-		if (!getOption('q')) {
-			writefln("%d lines of source assembled", totalLines);
-			if (objectBytes > 0)
-				writefln("%d bytes written to the object file", objectBytes);
+	xasm.listingStream.close();
+	xasm.objectStream.close();
+	if (xasm.exitCode <= 1) {
+		if (!xasm.getOption('q')) {
+			writefln("%d lines of source assembled", xasm.totalLines);
+			if (xasm.objectBytes > 0)
+				writefln("%d bytes written to the object file", xasm.objectBytes);
 		}
-		if (getOption('m')) {
-			writef("%s:", makeTarget);
-			foreach (filename; makeSources)
-				writef(" %s", makeEscape(filename));
+		if (xasm.getOption('m')) {
+			writef("%s:", xasm.makeTarget);
+			foreach (filename; xasm.makeSources)
+				writef(" %s", xasm.makeEscape(filename));
 			write("\n\txasm");
 			for (int i = 1; i < args.length; i++) {
 				string arg = args[i];
@@ -157,10 +149,10 @@ int main(string[] args) {
 						if (arg[0] == '-'
 						 && (letter == 'd' || letter == 'l' || letter == 't')
 						 && i + 1 < args.length && !isOption(args[i + 1])) {
-							writef(" %s %s", arg, makeEscape(args[++i]));
+							writef(" %s %s", arg, xasm.makeEscape(args[++i]));
 						}
 						else {
-							writef(" %s", makeEscape(arg));
+							writef(" %s", xasm.makeEscape(arg));
 						}
 						break;
 					}
@@ -171,5 +163,5 @@ int main(string[] args) {
 			writeln();
 		}
 	}
-	return exitCode;
+	return xasm.exitCode;
 }
