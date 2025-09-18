@@ -53,11 +53,11 @@ deb:
 osx: ../xasm-$(VERSION)-macos.dmg
 
 ../xasm-$(VERSION)-macos.dmg: osx/xasm osx/bin
-ifdef PORK_CODESIGNING_IDENTITY
-	codesign --options runtime -f -s $(PORK_CODESIGNING_IDENTITY) osx/xasm
+ifdef FOX_CODESIGNING_IDENTITY
+	codesign --options runtime -f -s $(FOX_CODESIGNING_IDENTITY) osx/xasm
 endif
 	hdiutil create -volname xasm-$(VERSION)-macos -srcfolder osx -format UDBZ -fs HFS+ -imagekey bzip2-level=3 -ov $@
-	/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit --wait --keychain-profile recoilnotarization $@
+	/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit --wait --keychain-profile foxnotary $@
 
 osx/xasm: source/app.d
 	mkdir -p osx && dmd -of$@ -O -release $< && rm -f osx/xasm.o
