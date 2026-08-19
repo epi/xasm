@@ -9,10 +9,12 @@ endif
 
 SEVENZIP = 7z a -mx=9 -bd -bso0
 
+SOURCES = source/app.d source/xasm/package.d
+
 all: xasm$(EXEEXT) xasm.html
 
-xasm$(EXEEXT): source/app.d
-	dmd -of$@ -O -release $<
+xasm$(EXEEXT): $(SOURCES)
+	dmd -of$@ -O -release $^
 
 xasm.html: xasm.1.asciidoc
 	asciidoc -o - $< | sed -e "s/527bbd;/20a0a0;/" >$@
@@ -59,8 +61,8 @@ endif
 	hdiutil create -volname xasm-$(VERSION)-macos -srcfolder osx -format UDBZ -fs HFS+ -imagekey bzip2-level=3 -ov $@
 	/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit --wait --keychain-profile foxnotary $@
 
-osx/xasm: source/app.d
-	mkdir -p osx && dmd -of$@ -O -release $< && rm -f osx/xasm.o
+osx/xasm: $(SOURCES)
+	mkdir -p osx && dmd -of$@ -O -release $^ && rm -f osx/xasm.o
 
 osx/bin:
 	mkdir -p osx && ln -s /usr/local/bin $@
