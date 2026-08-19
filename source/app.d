@@ -35,6 +35,7 @@ version (Windows) {
 
 alias SourceReader = immutable(ubyte)[] delegate(string path);
 alias BinaryReader = immutable(ubyte)[] delegate(string path, long offset, long length);
+alias ListingSink = void delegate(const(char)[] line);
 
 const string TITLE = "xasm 3.2.1";
 
@@ -199,6 +200,7 @@ alias DiagnosticSink = void delegate(in Diagnostic d);
 DiagnosticSink diagnostics;
 SourceReader readSource;
 BinaryReader readBinary;
+ListingSink listingSink;
 
 void warning(string msg, bool error = false) {
 	diagnostics(Diagnostic(
@@ -1102,16 +1104,6 @@ File openOutputFile(string filename, string msg) {
 	}
 }
 
-void ensureListingFileOpen(char letter, string msg) {
-	if (!listingStream.isOpen) {
-		string filename = optionParameters[letter - 'a'];
-		if (filename is null)
-			filename = sourceFilename.setExtension("lst");
-		listingStream = openOutputFile(filename, msg);
-		listingStream.writeln(TITLE);
-	}
-}
-
 void listNibble(int x) {
 	listingLine[listingColumn++] = cast(char) (x <= 9 ? x + '0' : x + ('A' - 10));
 }
@@ -1127,16 +1119,15 @@ void listWord(ushort x) {
 }
 
 void listLine() {
-	if (!optionListing || !getOption('l') || line is null)
+	if (!optionListing || listingSink is null || line is null)
 		return;
 	assert(pass2);
 	if (inFalseCondition() && !getOption('c'))
 		return;
-	if (getOption('i') && includeLevel > 0)
+	if (!getOption('i') && includeLevel > 0)
 		return;
-	ensureListingFileOpen('l', "Writing listing file...");
 	if (currentFilename != lastListedFilename) {
-		listingStream.writeln("Source: ", currentFilename);
+		listingSink("Source: " ~ currentFilename);
 		lastListedFilename = currentFilename;
 	}
 	int i = 4;
@@ -1150,7 +1141,7 @@ void listLine() {
 	listingLine[5] = ' ';
 	while (listingColumn < 32)
 		listingLine[listingColumn++] = ' ';
-	listingStream.writefln("%.32s%s", listingLine, line);
+	listingSink(format("%.32s%s", listingLine, line));
 }
 
 void listCommentLine() {
@@ -1163,25 +1154,23 @@ void listCommentLine() {
 	listLine();
 }
 
-void listLabelTable() {
-	if (optionParameters['t' - 'a'] !is null && listingStream.isOpen)
-		listingStream.close();
-	ensureListingFileOpen('t', "Writing label table...");
-	listingStream.writeln("Label table:");
+void listLabelTable(ListingSink sink) {
+	sink("Label table:");
 	foreach (string name; sort(labelTable.keys)) {
 		Label l = labelTable[name];
-		listingStream.write(l.unused ? 'n' : ' ');
-		listingStream.write(l.unknownInPass1 ? '2' : ' ');
 		int value = l.value;
 		char sign = ' ';
 		if (value < 0) {
 			sign = '-';
 			value = -value;
 		}
-		listingStream.writefln(
-			(l.value & 0xffff0000) != 0 ? " %s%08X %s" : "     %s%04X %s",
-			sign, value, name);
+		immutable fmt = (l.value & 0xffff0000) != 0 ? "%s%s %s%08X %s" : "%s%s     %s%04X %s";
+		sink(fmt.format(
+			l.unused ? 'n' : ' ',
+			l.unknownInPass1 ? '2' : ' ',
+			sign, value, name));
 	}
+
 }
 
 version (unittest) ubyte[] objectBuffer;
@@ -2947,6 +2936,42 @@ immutable(ubyte)[] readBinaryFile(string path, long offset, long length) {
 	return f.rawRead(buffer).assumeUnique;
 }
 
+void openListingFile(string filename, string msg) {
+	if (filename == "-") {
+		listingStream = stdout;
+	} else {
+		if (!getOption('q'))
+			messageStream.writeln(msg);
+		try {
+			listingStream = File(filename, "wb");
+		} catch (Exception e) {
+			throw new AssemblyError(e.msg);
+		}
+	}
+	listingStream.writeln(TITLE);
+}
+
+void ensureListingOpen(string msg) {
+	if (listingStream.isOpen)
+		return;
+	string filename = optionParameters['l' - 'a'];
+	if (filename is null)
+		filename = sourceFilename.setExtension("lst");
+	openListingFile(filename, msg);
+}
+
+void writeLabelTable() {
+	string filename = optionParameters['t' - 'a'];
+	if (filename !is null && listingStream.isOpen && listingStream != stdout)
+		listingStream.close();
+	if (!listingStream.isOpen) {
+		if (filename is null)
+			filename = sourceFilename.setExtension("lst");
+		openListingFile(filename, "Writing label table...");
+	}
+	listLabelTable((const(char)[] line) { listingStream.writeln(line); });
+}
+
 int main(string[] args) {
 	diagnostics = toDelegate(&reportDiagnostic);
 	readSource = toDelegate(&readSourceFile);
@@ -3034,12 +3059,17 @@ int main(string[] args) {
 `);
 			return exitCode;
 		}
+		if (getOption('l'))
+			listingSink = (const(char)[] line) {
+				ensureListingOpen("Writing listing file...");
+				listingStream.writeln(line);
+			};
 		try {
 			assemblyPass();
 			pass2 = true;
 			assemblyPass();
 			if (getOption('t') && labelTable.length > 0)
-				listLabelTable();
+				writeLabelTable();
 		} catch (AssemblyError e) {
 			warning(e.msg, true);
 			exitCode = 2;
