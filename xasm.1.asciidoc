@@ -196,7 +196,7 @@ A number is:
 - [[new_opcode]]an opcode (see below), e.g. `{lda #0}` is `$a9`
 - [[new_linecnt]]the current value of the line repeat counter (see below): `#`
 
-Abbreviations of Atari hardware registers are provided
+Shorthand notation for Atari hardware registers is provided
 to save two characters (`$d40e` vs `^4e`)
 and to facilitate porting software between Atari 8-bit computers
 and the Atari 5200 console.
@@ -212,6 +212,9 @@ is the location of hardware registers.
 |  ^3x |PIA  |$D30x|'error (there's no PIA chip)'
 |  ^4x |ANTIC|$D40x|`$D40x`
 |================================================
+
+This shorthand notation can be turned off with `opt ^-`
+and turned back on with `opt ^+` (see below).
 
 The opcode syntax represents the opcode byte of the instruction inside braces.
 The operand of the instruction is discarded and is needed only to recognize
@@ -294,18 +297,19 @@ here equ *
 
 [[new_opt]]*OPT* - set assembler options::
 
-Six options are available:
+Seven options are available:
 
 - `F` - fill the space between noncontiguous memory areas with `$FF` bytes
-- `G` - Atari 5200 mode for hardware register abbreviations (`^xx`)
+- `G` - Atari 5200 mode for hardware register shorthand notation (`^xx`)
 - `H` - generate Atari executable headers
 - `L` - write the listing
 - `O` - write the object file
 - `U` - warn of unused labels
+- `^` - enable hardware register shorthand notation (`^xx`)
 
 +
 You can turn any of these on or off.
-The default (before the first `OPT`) is `opt f-g-h+l+o+u+`.
+The default (before the first `OPT`) is `opt f-g-h+l+o+u+^+`.
 For compatibility with MADS, `opt ?+` is accepted and ignored.
 Examples:
 +
@@ -313,6 +317,7 @@ Examples:
  opt l-     listing off
  opt l+o-   listing on, object file off
  opt f+g+h- useful for Atari 5200 cartridges - raw output, 5200 hw regs
+ opt ^-     disable hardware register shorthand notation (`^xx`)
  opt ?+     MADS compatibility, no effect
 ------------------------------------------------------------------------------
 
@@ -717,6 +722,8 @@ Version ?.?.? (20??-??-??)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 - *xasm* can now be used as a link:libxasm.html[library] in any D program
   (by Adrian Matoga)
+- <<new_opt,`OPT ^-` disables the hardware register shorthand notation
+  (`^xx`), `OPT ^+` re-enables it>> (by Adrian Matoga)
 
 Version 3.2.1 (2022-12-08)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -830,7 +837,7 @@ reported "Label not defined before" error for the repeat count
 - <<new_opt,`OPT F+` causes `ORG` to fill the space
   between the old and the new location with `$FFs`>>
 - <<new_opt,`OPT G+` enables Atari 5200 mode for hardware
-  register abbreviations>>
+  register shorthand notation>>
 
 Version 2.4.1 (2002-06-27)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

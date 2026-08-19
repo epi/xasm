@@ -160,6 +160,7 @@ private:
 	bool optionListing; // opt l
 	bool optionObject; // opt o
 	bool optionUnusedLabels; // opt u
+	bool optionHwRegisters = true; // opt ^
 
 	string currentFilename;
 	int lineNo;
@@ -645,6 +646,8 @@ private:
 				}
 				break;
 			case '^':
+				if (!optionHwRegisters)
+					illegalCharacter();
 				switch (readChar()) {
 				case '0':
 					operand = option5200 ? 0xc000 : 0xd000;
@@ -874,6 +877,15 @@ private:
 			assert(testValue("^23") == 0xd203);
 			assert(testValue("^31") == 0xd301);
 			assert(testValue("^49") == 0xd409);
+			optionHwRegisters = false;
+			try {
+				testValue("^07");
+				assert(false, "^ should be illegal when disabled");
+			} catch (AssemblyError e) {
+				assert(e.msg == "Illegal character");
+			}
+			optionHwRegisters = true;
+			assert(testValue("^07") == 0xd007);
 			assert(testValue("!0") == 1);
 			assert(testValue("<$1234") == 0x34);
 			assert(testValue(">$1234567") == 0x45);
@@ -2197,6 +2209,9 @@ private:
 			case 'u':
 				optionUnusedLabels = readOption();
 				break;
+			case '^':
+				optionHwRegisters = readOption();
+				break;
 			case '?':
 				if (!readOption())
 					throw new AssemblyError("OPT ?- not supported");
@@ -2881,6 +2896,7 @@ private:
 		optionListing = pass2;
 		optionObject = true;
 		optionUnusedLabels = true;
+		optionHwRegisters = true;
 		willSkip = false;
 		skipping = false;
 		repeatOffset = 0;
