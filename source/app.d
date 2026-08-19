@@ -27,6 +27,7 @@ import std.stdio;
 import std.string;
 import std.exception : assumeUnique;
 import std.range : empty, front, popFront;
+import std.functional : toDelegate;
 
 version (Windows) {
 	import core.sys.windows.windows;
@@ -180,19 +181,24 @@ bool getOption(char letter) {
 	return options[letter - 'a'];
 }
 
+enum Severity { warning, error }
+
+struct Diagnostic {
+	Severity severity;
+	string filename;
+	int line;
+	string sourceLine;
+	string message;
+}
+
+alias DiagnosticSink = void delegate(in Diagnostic d);
+
+DiagnosticSink diagnostics;
+
 void warning(string msg, bool error = false) {
-	messageStream.flush();
-	version (Windows) {
-		HANDLE stderrHandle = GetStdHandle(STD_ERROR_HANDLE);
-		CONSOLE_SCREEN_BUFFER_INFO csbi;
-		GetConsoleScreenBufferInfo(stderrHandle, &csbi);
-		SetConsoleTextAttribute(stderrHandle, (csbi.wAttributes & ~0xf) | (error ? 12 : 14));
-		scope (exit) SetConsoleTextAttribute(stderrHandle, csbi.wAttributes);
-	}
-	if (line !is null)
-		stderr.writeln(line);
-	stderr.writefln("%s (%d) %s: %s", currentFilename, lineNo, error ? "ERROR" : "WARNING", msg);
-	exitCode = 1;
+	diagnostics(Diagnostic(
+		error ? Severity.error : Severity.warning,
+		currentFilename, lineNo, line, msg));
 }
 
 void illegalCharacter() {
@@ -2909,7 +2915,24 @@ void setOption(char letter) {
 	options[letter - 'a'] = true;
 }
 
+void reportDiagnostic(in Diagnostic d) {
+	messageStream.flush();
+	version (Windows) {
+		HANDLE stderrHandle = GetStdHandle(STD_ERROR_HANDLE);
+		CONSOLE_SCREEN_BUFFER_INFO csbi;
+		GetConsoleScreenBufferInfo(stderrHandle, &csbi);
+		SetConsoleTextAttribute(stderrHandle, (csbi.wAttributes & ~0xf) | (d.severity == Severity.error ? 12 : 14));
+		scope (exit) SetConsoleTextAttribute(stderrHandle, csbi.wAttributes);
+	}
+	if (d.sourceLine !is null)
+		stderr.writeln(d.sourceLine);
+	stderr.writefln("%s (%d) %s: %s", d.filename, d.line,
+		d.severity == Severity.error ? "ERROR" : "WARNING", d.message);
+	exitCode = max(exitCode, d.severity == Severity.error ? 2 : 1);
+}
+
 int main(string[] args) {
+	diagnostics = toDelegate(&reportDiagnostic);
 	for (int i = 1; i < args.length; i++) {
 		string arg = args[i];
 		if (isOption(arg)) {
