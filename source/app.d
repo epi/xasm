@@ -33,23 +33,43 @@ version (Windows) {
 	import core.sys.windows.windows;
 }
 
+enum Severity { warning, error }
+
+struct Diagnostic {
+	Severity severity;
+	string filename;
+	int line;
+	string sourceLine;
+	string message;
+}
+
+alias DiagnosticSink = void delegate(in Diagnostic d);
 alias SourceReader = immutable(ubyte)[] delegate(string path);
 alias BinaryReader = immutable(ubyte)[] delegate(string path, long offset, long length);
 alias ListingSink = void delegate(const(char)[] line);
 
-const string TITLE = "xasm 3.2.1";
+class AssemblyError : Exception {
+	this(string msg) {
+		super(msg);
+	}
+}
 
-File messageStream;
+class Label {
+	int value;
+	bool unused = true;
+	bool unknownInPass1 = false;
+	bool passed = false;
+
+	this(int value) {
+		this.value = value;
+	}
+}
+
+class Assembler {
 
 string sourceFilename = null;
-bool[26] options;
-string[26] optionParameters;
 string[] commandLineDefinitions = null;
-string objectFilename = null;
-string[] makeSources = null;
 immutable(ubyte)[][string] sourceFiles;
-
-int exitCode = 0;
 
 int totalLines;
 
@@ -70,22 +90,6 @@ int column;
 
 bool foundEnd;
 
-class AssemblyError : Exception {
-	this(string msg) {
-		super(msg);
-	}
-}
-
-class Label {
-	int value;
-	bool unused = true;
-	bool unknownInPass1 = false;
-	bool passed = false;
-
-	this(int value) {
-		this.value = value;
-	}
-}
 
 Label[string] labelTable;
 Label currentLabel;
@@ -155,7 +159,7 @@ int repeatOffset; // instruction repeat
 
 bool wereManyInstructions;
 
-alias void function(int move) MoveFunction;
+alias void delegate(int move) MoveFunction;
 
 int value1;
 AddrMode addrMode1;
@@ -170,27 +174,13 @@ struct IfContext {
 
 IfContext[] ifContexts;
 
-File listingStream;
 char[32] listingLine;
 int listingColumn;
 string lastListedFilename = null;
 
-bool getOption(char letter) {
-	assert(letter >= 'a' && letter <= 'z');
-	return options[letter - 'a'];
-}
-
-enum Severity { warning, error }
-
-struct Diagnostic {
-	Severity severity;
-	string filename;
-	int line;
-	string sourceLine;
-	string message;
-}
-
-alias DiagnosticSink = void delegate(in Diagnostic d);
+bool listFalseConditionals; // option 'c'
+bool listIncludedFiles; // !option 'i'
+bool warnUnusedLabels; // option 'u'
 
 DiagnosticSink diagnostics;
 SourceReader readSource;
@@ -386,100 +376,100 @@ void checkOriginDefined() {
 		throw new AssemblyError("No ORG specified");
 }
 
-int operatorPlus(int a, int b) {
+static int operatorPlus(int a, int b) {
 	return b;
 }
 
-int operatorMinus(int a, int b) {
+static int operatorMinus(int a, int b) {
 	return -b;
 }
 
-int operatorLow(int a, int b) {
+static int operatorLow(int a, int b) {
 	return b & 0xff;
 }
 
-int operatorHigh(int a, int b) {
+static int operatorHigh(int a, int b) {
 	return (b >> 8) & 0xff;
 }
 
-int operatorLogicalNot(int a, int b) {
+static int operatorLogicalNot(int a, int b) {
 	return !b;
 }
 
-int operatorBitwiseNot(int a, int b) {
+static int operatorBitwiseNot(int a, int b) {
 	return ~b;
 }
 
-int operatorAdd(int a, int b) {
+static int operatorAdd(int a, int b) {
 	long r = cast(long) a + b;
 	if (r < -0x80000000L || r > 0x7fffffffL)
 		throw new AssemblyError("Arithmetic overflow");
 	return a + b;
 }
 
-int operatorSubtract(int a, int b) {
+static int operatorSubtract(int a, int b) {
 	long r = cast(long) a - b;
 	if (r < -0x80000000L || r > 0x7fffffffL)
 		throw new AssemblyError("Arithmetic overflow");
 	return a - b;
 }
 
-int operatorMultiply(int a, int b) {
+static int operatorMultiply(int a, int b) {
 	long r = cast(long) a * b;
 	if (r < -0x80000000L || r > 0x7fffffffL)
 		throw new AssemblyError("Arithmetic overflow");
 	return a * b;
 }
 
-int operatorDivide(int a, int b) {
+static int operatorDivide(int a, int b) {
 	if (b == 0)
 		throw new AssemblyError("Divide by zero");
 	return a / b;
 }
 
-int operatorModulus(int a, int b) {
+static int operatorModulus(int a, int b) {
 	if (b == 0)
 		throw new AssemblyError("Divide by zero");
 	return a % b;
 }
 
-int operatorAnd(int a, int b) {
+static int operatorAnd(int a, int b) {
 	return a & b;
 }
 
-int operatorOr(int a, int b) {
+static int operatorOr(int a, int b) {
 	return a | b;
 }
 
-int operatorXor(int a, int b) {
+static int operatorXor(int a, int b) {
 	return a ^ b;
 }
 
-int operatorEqual(int a, int b) {
+static int operatorEqual(int a, int b) {
 	return a == b;
 }
 
-int operatorNotEqual(int a, int b) {
+static int operatorNotEqual(int a, int b) {
 	return a != b;
 }
 
-int operatorLess(int a, int b) {
+static int operatorLess(int a, int b) {
 	return a < b;
 }
 
-int operatorGreater(int a, int b) {
+static int operatorGreater(int a, int b) {
 	return a > b;
 }
 
-int operatorLessEqual(int a, int b) {
+static int operatorLessEqual(int a, int b) {
 	return a <= b;
 }
 
-int operatorGreaterEqual(int a, int b) {
+static int operatorGreaterEqual(int a, int b) {
 	return a >= b;
 }
 
-int operatorShiftLeft(int a, int b) {
+static int operatorShiftLeft(int a, int b) {
 	if (b < 0)
 		return operatorShiftRight(a, -b);
 	if (a != 0 && b >= 32)
@@ -490,7 +480,7 @@ int operatorShiftLeft(int a, int b) {
 	return a << b;
 }
 
-int operatorShiftRight(int a, int b) {
+static int operatorShiftRight(int a, int b) {
 	if (b < 0)
 		return operatorShiftLeft(a, -b);
 	if (b >= 32)
@@ -498,11 +488,11 @@ int operatorShiftRight(int a, int b) {
 	return a >> b;
 }
 
-int operatorLogicalAnd(int a, int b) {
+static int operatorLogicalAnd(int a, int b) {
 	return a && b;
 }
 
-int operatorLogicalOr(int a, int b) {
+static int operatorLogicalOr(int a, int b) {
 	return a || b;
 }
 
@@ -786,6 +776,8 @@ version (unittest) int testValue(string l) {
 }
 
 unittest {
+	auto a = testAssembler();
+	with (a) {
 	assert(testValue("123") == 123);
 	assert(testValue("$1234abCd") == 0x1234abcd);
 	assert(testValue("%101") == 5);
@@ -805,6 +797,7 @@ unittest {
 	assert(testValue("{Jsr}") == 0x20);
 	assert(testValue("{bit a:}") == 0x2c);
 	assert(testValue("{bIt $7d}") == 0x24);
+	}
 }
 
 void mustBeKnownInPass1() {
@@ -1053,6 +1046,8 @@ version (unittest) AddrMode testAddrMode(string l) {
 }
 
 unittest {
+	auto a = testAssembler();
+	with (a) {
 	assert(testAddrMode(" @") == AddrMode.ACCUMULATOR);
 	assert(testAddrMode(" #0") == AddrMode.IMMEDIATE);
 	assert(testAddrMode(" $abc,x-") == cast(AddrMode) (AddrMode.ABSOLUTE_X + AddrMode.DECREMENT));
@@ -1069,6 +1064,7 @@ unittest {
 	assert(testAddrMode(" (),y}") == AddrMode.INDIRECT_Y);
 	assert(testAddrMode(" ()}") == AddrMode.INDIRECT);
 	inOpcode = false;
+	}
 }
 
 bool inFalseCondition() {
@@ -1076,15 +1072,6 @@ bool inFalseCondition() {
 		if (!ic.condition) return true;
 	}
 	return false;
-}
-
-string makeEscape(string s) {
-	return s.replace("$", "$$");
-}
-
-void recordSource(string filename) {
-	if (find(makeSources, filename).empty)
-		makeSources ~= filename;
 }
 
 void listNibble(int x) {
@@ -1105,9 +1092,9 @@ void listLine() {
 	if (!optionListing || listingSink is null || line is null)
 		return;
 	assert(pass2);
-	if (inFalseCondition() && !getOption('c'))
+	if (inFalseCondition() && !listFalseConditionals)
 		return;
-	if (!getOption('i') && includeLevel > 0)
+	if (!listIncludedFiles && includeLevel > 0)
 		return;
 	if (currentFilename != lastListedFilename) {
 		listingSink("Source: " ~ currentFilename);
@@ -2273,7 +2260,6 @@ void assemblyIns() {
 	}
 	if (inOpcode)
 		length = 1;
-	recordSource(filename);
 	immutable(ubyte)[] data = readBinary(filename, offset, length);
 	if (length >= 0 && data.length < length)
 		throw new AssemblyError("File is too short");
@@ -2610,6 +2596,8 @@ version (unittest) ubyte[] testInstruction(string l) {
 }
 
 unittest {
+	auto a = testAssembler();
+	with (a) {
 	assert(testInstruction("nop") == representation(hexString!"ea"));
 	assert(testInstruction("add (5,0)") == representation(hexString!"18a2006105"));
 	assert(testInstruction("mwa #$abcd $1234") == representation(hexString!"a9cd8d3412a9ab8d3512"));
@@ -2617,6 +2605,7 @@ unittest {
 	assert(testInstruction("dta 5,d'Foo'*,a($4589)") == representation(hexString!"05a6efef8945"));
 	assert(testInstruction("dta r(1,12,123,1234567890,12345678900000,.5,.03,000.1664534589,1e97)")
 	 == representation(hexString!"400100000000 401200000000 410123000000 441234567890 461234567890 3f5000000000 3f0300000000 3f1664534589 701000000000"));
+	}
 }
 
 void assemblySequence() {
@@ -2671,7 +2660,7 @@ void assemblyLine() {
 				assert(label in labelTable);
 				currentLabel = labelTable[label];
 				currentLabel.passed = true;
-				if (currentLabel.unused && getOption('u') && optionUnusedLabels)
+				if (currentLabel.unused && warnUnusedLabels && optionUnusedLabels)
 					warning("Unused label: " ~ label);
 			}
 		}
@@ -2760,16 +2749,7 @@ void assemblyLine() {
 }
 
 void assemblyFile(string filename) {
-	immutable(ubyte)[] source = sourceFiles.require(filename, {
-			if (filename != "-") {
-				filename = filename.defaultExtension("asx");
-				if (getOption('p'))
-					filename = absolutePath(filename);
-				recordSource(filename);
-			}
-			return readSource(filename);
-		}());
-
+	immutable(ubyte)[] source = sourceFiles.require(filename, readSource(filename));
 	string oldFilename = currentFilename;
 	int oldLineNo = lineNo;
 	currentFilename = filename;
@@ -2810,6 +2790,8 @@ void assemblyFile(string filename) {
 }
 
 unittest {
+	auto a = testAssembler();
+	with (a) {
 	sourceFiles[""] = " lda:sne:ldy:inx $1234".representation;
 	assemblyFile("");
 	pass2 = true;
@@ -2817,6 +2799,7 @@ unittest {
 	assemblyFile("");
 	writefln!"%(%02x%)"(objectBuffer.data);
 	assert(objectBuffer.data == [0xad, 0x34, 0x12, 0xd0, 0x03, 0xac, 0x34, 0x12, 0xe8]);
+	}
 }
 
 void assemblyPass() {
@@ -2849,6 +2832,63 @@ void assemblyPass() {
 		throw new AssemblyError("Can't skip over this");
 }
 
+this(SourceReader readSource, BinaryReader readBinary, DiagnosticSink diagnostics) {
+	this.readSource = readSource;
+	this.readBinary = readBinary;
+	this.diagnostics = diagnostics;
+}
+
+version (unittest) static Assembler testAssembler() {
+	return new Assembler(
+		(string path) => (immutable(ubyte)[]).init,
+		(string path, long offset, long length) => (immutable(ubyte)[]).init,
+		null);
+}
+
+const(ubyte)[] object() const { return objectBuffer.data; }
+
+size_t linesAssembled() const { return totalLines; }
+
+bool hasLabels() const { return labelTable.length > 0; }
+
+void assemble(string sourceFilename) {
+	this.sourceFilename = sourceFilename;
+	try {
+		pass2 = false;
+		assemblyPass();
+		pass2 = true;
+		assemblyPass();
+	} catch (AssemblyError e) {
+		warning(e.msg, true);
+	}
+}
+
+} // class Assembler
+
+const string TITLE = "xasm 3.2.1";
+
+File messageStream;
+
+string sourceFilename = null;
+bool[26] options;
+string[26] optionParameters;
+string objectFilename = null;
+
+int exitCode = 0;
+
+File listingStream;
+
+string[] makeSources = null;
+
+void recordSource(string filename) {
+	if (find(makeSources, filename).empty)
+		makeSources ~= filename;
+}
+
+string makeEscape(string s) {
+	return s.replace("$", "$$");
+}
+
 pure bool isOption(string arg) {
 	if (arg.length < 2) return false;
 	if (arg[0] == '-') return true;
@@ -2856,6 +2896,11 @@ pure bool isOption(string arg) {
 	if (arg.length == 2) return true;
 	if (arg[2] == ':') return true;
 	return false;
+}
+
+bool getOption(char letter) {
+	assert(letter >= 'a' && letter <= 'z');
+	return options[letter - 'a'];
 }
 
 void setOption(char letter) {
@@ -2883,9 +2928,15 @@ void reportDiagnostic(in Diagnostic d) {
 	exitCode = max(exitCode, d.severity == Severity.error ? 2 : 1);
 }
 
-immutable(ubyte)[] readSourceFile(string path) {
+immutable(ubyte)[] readSourceFile(string filename) {
+	if (filename != "-") {
+		filename = filename.defaultExtension("asx");
+		if (getOption('p'))
+			filename = absolutePath(filename);
+		recordSource(filename);
+	}
 	try {
-		File stream = path == "-" ? stdin : File(path);
+		File stream = filename == "-" ? stdin : File(filename);
 		return stream.byChunk(65536).joiner.array.assumeUnique;
 	} catch (Exception e) {
 		throw new AssemblyError(e.msg);
@@ -2893,6 +2944,7 @@ immutable(ubyte)[] readSourceFile(string path) {
 }
 
 immutable(ubyte)[] readBinaryFile(string path, long offset, long length) {
+	recordSource(path);
 	File f;
 	try {
 		f = File(path);
@@ -2934,7 +2986,7 @@ void ensureListingOpen(string msg) {
 	openListingFile(filename, msg);
 }
 
-void writeLabelTable() {
+void writeLabelTable(Assembler assembler) {
 	string filename = optionParameters['t' - 'a'];
 	if (filename !is null && listingStream.isOpen && listingStream != stdout)
 		listingStream.close();
@@ -2943,7 +2995,7 @@ void writeLabelTable() {
 			filename = sourceFilename.setExtension("lst");
 		openListingFile(filename, "Writing label table...");
 	}
-	listLabelTable((const(char)[] line) { listingStream.writeln(line); });
+	assembler.listLabelTable((const(char)[] line) { listingStream.writeln(line); });
 }
 
 void writeObjectFile(const(ubyte)[] object) {
@@ -2965,9 +3017,7 @@ void writeObjectFile(const(ubyte)[] object) {
 }
 
 int main(string[] args) {
-	diagnostics = toDelegate(&reportDiagnostic);
-	readSource = toDelegate(&readSourceFile);
-	readBinary = toDelegate(&readBinaryFile);
+	string[] commandLineDefinitions;
 
 	for (int i = 1; i < args.length; i++) {
 		string arg = args[i];
@@ -3051,29 +3101,35 @@ int main(string[] args) {
 `);
 			return exitCode;
 		}
+		auto assembler = new Assembler(
+			toDelegate(&readSourceFile),
+			toDelegate(&readBinaryFile),
+			toDelegate(&reportDiagnostic));
+		assembler.commandLineDefinitions = commandLineDefinitions;
+		assembler.listFalseConditionals = getOption('c');
+		assembler.listIncludedFiles = !getOption('i');
+		assembler.warnUnusedLabels = getOption('u');
 		if (getOption('l'))
-			listingSink = (const(char)[] line) {
+			assembler.listingSink = (const(char)[] line) {
 				ensureListingOpen("Writing listing file...");
 				listingStream.writeln(line);
 			};
 		try {
-			assemblyPass();
-			pass2 = true;
-			assemblyPass();
-			writeObjectFile(objectBuffer.data);
-			if (getOption('t') && labelTable.length > 0)
-				writeLabelTable();
+			assembler.assemble(sourceFilename);
+			writeObjectFile(assembler.object);
+			if (getOption('t') && assembler.hasLabels() > 0)
+				writeLabelTable(assembler);
 		} catch (AssemblyError e) {
-			warning(e.msg, true);
+			assembler.warning(e.msg, true);
 			exitCode = 2;
 		}
 		if (listingStream != stdout)
 			listingStream.close();
 		if (exitCode <= 1) {
 			if (!getOption('q')) {
-				messageStream.writefln("%d lines of source assembled", totalLines);
-				if (objectBuffer.data.length > 0)
-					messageStream.writefln("%d bytes written to the object file", objectBuffer.data.length);
+				messageStream.writefln("%d lines of source assembled", assembler.linesAssembled);
+				if (assembler.object.length > 0)
+					messageStream.writefln("%d bytes written to the object file", assembler.object.length);
 			}
 			if (getOption('m')) {
 				messageStream.writef("%s:", makeEscape(objectFilename));
