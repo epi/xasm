@@ -100,26 +100,18 @@ immutable(ubyte)[] readSourceFile(string filename) {
 			filename = absolutePath(filename);
 		recordSource(filename);
 	}
-	try {
-		File stream = filename == "-" ? stdin : File(filename);
-		return stream.byChunk(65536).joiner.array.assumeUnique;
-	} catch (Exception e) {
-		throw new AssemblyError(e.msg);
-	}
+	File stream = filename == "-" ? stdin : File(filename);
+	return stream.byChunk(65536).joiner.array.assumeUnique;
 }
 
 immutable(ubyte)[] readBinaryFile(string path, long offset, long length) {
 	recordSource(path);
 	File f;
-	try {
-		f = File(path);
-	} catch (Exception e) {
-		throw new AssemblyError(e.msg);
-	}
+	f = File(path);
 	try {
 		f.seek(offset, offset >= 0 ? SEEK_SET : SEEK_END);
 	} catch (Exception e) {
-		throw new AssemblyError("Error seeking file");
+		throw new Exception("Error seeking file");
 	}
 	if (length < 0)
 		return f.byChunk(65536).joiner.array.assumeUnique;
@@ -133,11 +125,7 @@ void openListingFile(string filename, string msg) {
 	} else {
 		if (!getOption('q'))
 			messageStream.writeln(msg);
-		try {
-			listingStream = File(filename, "wb");
-		} catch (Exception e) {
-			throw new AssemblyError(e.msg);
-		}
+		listingStream = File(filename, "wb");
 	}
 	listingStream.writeln(TITLE);
 }
@@ -172,13 +160,9 @@ void writeObjectFile(const(ubyte)[] object) {
 	}
 	if (!getOption('q'))
 		messageStream.writeln("Writing object file...");
-	try {
-		auto stream = File(objectFilename, "wb");
-		stream.rawWrite(object);
-		stream.close();
-	} catch (Exception e) {
-		throw new AssemblyError("Error writing object file");
-	}
+	auto stream = File(objectFilename, "wb");
+	stream.rawWrite(object);
+	stream.close();
 }
 
 int main(string[] args) {
@@ -279,13 +263,13 @@ int main(string[] args) {
 				ensureListingOpen("Writing listing file...");
 				listingStream.writeln(line);
 			};
+		assembler.assemble(sourceFilename);
 		try {
-			assembler.assemble(sourceFilename);
 			writeObjectFile(assembler.object);
-			if (getOption('t') && assembler.hasLabels() > 0)
+			if (getOption('t') && assembler.hasLabels)
 				writeLabelTable(assembler);
-		} catch (AssemblyError e) {
-			assembler.warning(e.msg, true);
+		} catch (Exception e) {
+			reportDiagnostic(Diagnostic(Severity.error, "", 0, null, e.msg));
 			exitCode = 2;
 		}
 		if (listingStream != stdout)

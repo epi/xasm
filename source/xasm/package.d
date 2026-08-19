@@ -24,7 +24,7 @@ alias SourceReader = immutable(ubyte)[] delegate(string path);
 alias BinaryReader = immutable(ubyte)[] delegate(string path, long offset, long length);
 alias ListingSink = void delegate(const(char)[] line);
 
-class AssemblyError : Exception {
+private class AssemblyError : Exception {
 	this(string msg) {
 		super(msg);
 	}
@@ -43,9 +43,9 @@ class Label {
 
 class Assembler {
 
-	this(SourceReader readSource, BinaryReader readBinary, DiagnosticSink diagnostics) {
-		this.readSource = readSource;
-		this.readBinary = readBinary;
+	this(SourceReader sourceReader, BinaryReader binaryReader, DiagnosticSink diagnostics) {
+		this.sourceReader = sourceReader;
+		this.binaryReader = binaryReader;
 		this.diagnostics = diagnostics;
 	}
 
@@ -211,11 +211,26 @@ private:
 	string lastListedFilename = null;
 
 	DiagnosticSink diagnostics;
-	SourceReader readSource;
-	BinaryReader readBinary;
+	SourceReader sourceReader;
+	BinaryReader binaryReader;
 
-	// TODO: hide
-	public void warning(string msg, bool error = false) {
+	immutable(ubyte)[] readSource(string filename) {
+		try {
+			return sourceReader(filename);
+		} catch (Exception e) {
+			throw new AssemblyError(e.msg);
+		}
+	}
+
+	immutable(ubyte)[] readBinary(string path, long offset, long length) {
+		try {
+			return binaryReader(path, offset, length);
+		} catch (Exception e) {
+			throw new AssemblyError(e.msg);
+		}
+	}
+
+	void warning(string msg, bool error = false) {
 		diagnostics(Diagnostic(
 			error ? Severity.error : Severity.warning,
 			currentFilename, lineNo, line, msg));
