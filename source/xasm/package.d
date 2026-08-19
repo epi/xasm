@@ -43,8 +43,65 @@ class Label {
 
 class Assembler {
 
-	string sourceFilename = null;
+	this(SourceReader readSource, BinaryReader readBinary, DiagnosticSink diagnostics) {
+		this.readSource = readSource;
+		this.readBinary = readBinary;
+		this.diagnostics = diagnostics;
+	}
+
+	bool listFalseConditionals; // option 'c'
+	bool listIncludedFiles = true; // !option 'i'
+	bool warnUnusedLabels; // option 'u'
+
 	string[] commandLineDefinitions = null;
+
+	ListingSink listingSink;
+
+	void assemble(string sourceFilename) {
+		this.sourceFilename = sourceFilename;
+		try {
+			pass2 = false;
+			assemblyPass();
+			pass2 = true;
+			assemblyPass();
+		} catch (AssemblyError e) {
+			warning(e.msg, true);
+		}
+	}
+
+	const(ubyte)[] object() const { return objectBuffer.data; }
+
+	size_t linesAssembled() const { return totalLines; }
+
+	bool hasLabels() const { return labelTable.length > 0; }
+
+	void listLabelTable(ListingSink sink) {
+		sink("Label table:");
+		foreach (string name; sort(labelTable.keys)) {
+			Label l = labelTable[name];
+			int value = l.value;
+			char sign = ' ';
+			if (value < 0) {
+				sign = '-';
+				value = -value;
+			}
+			immutable fmt = (l.value & 0xffff0000) != 0 ? "%s%s %s%08X %s" : "%s%s     %s%04X %s";
+			sink(fmt.format(
+				l.unused ? 'n' : ' ',
+				l.unknownInPass1 ? '2' : ' ',
+				sign, value, name));
+		}
+	}
+
+private:
+	version (unittest) static Assembler testAssembler() {
+		return new Assembler(
+			(string path) => (immutable(ubyte)[]).init,
+			(string path, long offset, long length) => (immutable(ubyte)[]).init,
+			null);
+	}
+
+	string sourceFilename = null;
 	immutable(ubyte)[][string] sourceFiles;
 
 	int totalLines;
@@ -65,7 +122,6 @@ class Assembler {
 	int column;
 
 	bool foundEnd;
-
 
 	Label[string] labelTable;
 	Label currentLabel;
@@ -154,16 +210,12 @@ class Assembler {
 	int listingColumn;
 	string lastListedFilename = null;
 
-	bool listFalseConditionals; // option 'c'
-	bool listIncludedFiles; // !option 'i'
-	bool warnUnusedLabels; // option 'u'
-
 	DiagnosticSink diagnostics;
 	SourceReader readSource;
 	BinaryReader readBinary;
-	ListingSink listingSink;
 
-	void warning(string msg, bool error = false) {
+	// TODO: hide
+	public void warning(string msg, bool error = false) {
 		diagnostics(Diagnostic(
 			error ? Severity.error : Severity.warning,
 			currentFilename, lineNo, line, msg));
@@ -1098,25 +1150,6 @@ class Assembler {
 			checkOriginDefined();
 		}
 		listLine();
-	}
-
-	void listLabelTable(ListingSink sink) {
-		sink("Label table:");
-		foreach (string name; sort(labelTable.keys)) {
-			Label l = labelTable[name];
-			int value = l.value;
-			char sign = ' ';
-			if (value < 0) {
-				sign = '-';
-				value = -value;
-			}
-			immutable fmt = (l.value & 0xffff0000) != 0 ? "%s%s %s%08X %s" : "%s%s     %s%04X %s";
-			sink(fmt.format(
-				l.unused ? 'n' : ' ',
-				l.unknownInPass1 ? '2' : ' ',
-				sign, value, name));
-		}
-
 	}
 
 	Appender!(ubyte[]) objectBuffer;
@@ -2808,35 +2841,4 @@ class Assembler {
 			throw new AssemblyError("Can't skip over this");
 	}
 
-	this(SourceReader readSource, BinaryReader readBinary, DiagnosticSink diagnostics) {
-		this.readSource = readSource;
-		this.readBinary = readBinary;
-		this.diagnostics = diagnostics;
-	}
-
-	version (unittest) static Assembler testAssembler() {
-		return new Assembler(
-			(string path) => (immutable(ubyte)[]).init,
-			(string path, long offset, long length) => (immutable(ubyte)[]).init,
-			null);
-	}
-
-	const(ubyte)[] object() const { return objectBuffer.data; }
-
-	size_t linesAssembled() const { return totalLines; }
-
-	bool hasLabels() const { return labelTable.length > 0; }
-
-	void assemble(string sourceFilename) {
-		this.sourceFilename = sourceFilename;
-		try {
-			pass2 = false;
-			assemblyPass();
-			pass2 = true;
-			assemblyPass();
-		} catch (AssemblyError e) {
-			warning(e.msg, true);
-		}
-	}
-
-} // class Assembler
+}
