@@ -1,3 +1,21 @@
+// xasm 3.2.1 by Piotr Fusik <fox@scene.pl>
+// http://xasm.atari.org
+// Can be compiled with DMD v2.101.0.
+
+// Poetic License:
+//
+// This work 'as-is' we provide.
+// No warranty express or implied.
+// We've done our best,
+// to debug and test.
+// Liability for damages denied.
+//
+// Permission is granted hereby,
+// to copy, share, and modify.
+// Use as is fit,
+// free or for profit.
+// These rights, on this notice, rely.
+
 module xasm;
 
 import std.algorithm : canFind, find, sort;
@@ -9,19 +27,30 @@ import std.range : empty, front, popFront;
 import std.string : representation, startsWith, toUpper;
 version (unittest) import std.stdio;
 
+/// Severity of a `Diagnostic` reported during assembly.
 enum Severity { warning, error }
 
+/// A single warning or error emitted by the assembler, together with the
+/// source location it refers to.
 struct Diagnostic {
-	Severity severity;
-	string filename;
-	int line;
-	string sourceLine;
-	string message;
+	Severity severity; /// Whether this diagnostic is a warning or a fatal error.
+	string filename; /// Name of the source file the diagnostic refers to.
+	int line; /// 1-based line number within `filename`.
+	string sourceLine; /// Text of the offending source line.
+	string message; /// Human-readable description of the problem.
 }
 
+/// Callback invoked for every `Diagnostic` produced during assembly.
 alias DiagnosticSink = void delegate(in Diagnostic d);
+
+/// Callback that returns the contents of the source file at `path`.
 alias SourceReader = immutable(ubyte)[] delegate(string path);
+
+/// Callback that returns `length` bytes starting at `offset` from the binary
+/// file at `path`, as used by binary include directives.
 alias BinaryReader = immutable(ubyte)[] delegate(string path, long offset, long length);
+
+/// Callback that receives the assembly listing one line at a time.
 alias ListingSink = void delegate(const(char)[] line);
 
 private class AssemblyError : Exception {
@@ -30,51 +59,68 @@ private class AssemblyError : Exception {
 	}
 }
 
-class Label {
-	int value;
-	bool unused = true;
-	bool unknownInPass1 = false;
-	bool passed = false;
-
-	this(int value) {
-		this.value = value;
-	}
+/// An entry in the assembler's symbol table.
+struct Label {
+	int value; /// The value assigned to the label.
+	bool unused = true; /// True until the label is referenced somewhere.
+	bool unknownInPass1 = false; /// True if the value was not yet known during pass 1.
+	bool passed = false; /// True once the label's definition has been processed.
 }
 
+/// Assembles xasm 6502 source into an object file.
+///
+/// File and diagnostic I/O are delegated to caller-supplied callbacks, so the
+/// assembler itself performs no direct file access.
 class Assembler {
 
+	/// Constructs an assembler that reads source and binary files through
+	/// `sourceReader` and `binaryReader`, and reports warnings and errors
+	/// through `diagnostics`.
 	this(SourceReader sourceReader, BinaryReader binaryReader, DiagnosticSink diagnostics) {
 		this.sourceReader = sourceReader;
 		this.binaryReader = binaryReader;
 		this.diagnostics = diagnostics;
 	}
 
-	bool listFalseConditionals; // option 'c'
-	bool listIncludedFiles = true; // !option 'i'
-	bool warnUnusedLabels; // option 'u'
+	bool listFalseConditionals; /// List lines skipped by false conditionals.
+	bool listIncludedFiles = true; /// List the contents of included files.
+	bool warnUnusedLabels; /// Warn about labels that are declared but never used.
 
+	/// Labels to predefine, each in `NAME=VALUE` form, as given on the command line.
 	string[] commandLineDefinitions = null;
 
+	/// Sink that receives the assembly listing; if null, no listing is produced.
 	ListingSink listingSink;
 
+	/// Assembles the source file `sourceFilename`, reporting any problems
+	/// through the diagnostics callback given to the constructor.
 	void assemble(string sourceFilename) {
 		this.sourceFilename = sourceFilename;
 		try {
 			pass2 = false;
 			assemblyPass();
 			pass2 = true;
+			objectBuffer.clear();
 			assemblyPass();
 		} catch (AssemblyError e) {
 			warning(e.msg, true);
 		}
 	}
 
+	/// The assembled object code produced by the last call to `assemble`.
 	const(ubyte)[] object() const { return objectBuffer.data; }
 
+	/// The total number of source lines processed.
 	size_t linesAssembled() const { return totalLines; }
 
+	/// True if at least one label was defined.
 	bool hasLabels() const { return labelTable.length > 0; }
 
+	/// Looks up `label` (case-insensitively) and returns a pointer to its
+	/// table entry, or null if it is not defined.
+	const(Label*) getLabel(const(char)[] label) const { return label.toUpper in labelTable; }
+
+	/// Writes the label table, sorted by name, to `sink` one line at a time.
 	void listLabelTable(ListingSink sink) {
 		sink("Label table:");
 		foreach (string name; sort(labelTable.keys)) {
@@ -124,7 +170,7 @@ private:
 	bool foundEnd;
 
 	Label[string] labelTable;
-	Label currentLabel;
+	Label* currentLabel;
 	string lastGlobalLabel;
 
 	alias int function(int a, int b) OperatorFunction;
@@ -660,8 +706,7 @@ private:
 				string label = readLabel();
 				if (label is null)
 					illegalCharacter();
-				if (label in labelTable) {
-					Label l = labelTable[label];
+				if (Label* l = label in labelTable) {
 					operand = l.value;
 					l.unused = false;
 					if (pass2) {
@@ -2678,11 +2723,10 @@ private:
 				if (!pass2) {
 					if (label in labelTable)
 						throw new AssemblyError("Label declared twice");
-					currentLabel = new Label(origin);
-					labelTable[label] = currentLabel;
+					currentLabel = &labelTable.require(label, Label(origin));
 				} else {
 					assert(label in labelTable);
-					currentLabel = labelTable[label];
+					currentLabel = &labelTable[label];
 					currentLabel.passed = true;
 					if (currentLabel.unused && warnUnusedLabels && optionUnusedLabels)
 						warning("Unused label: " ~ label);
@@ -2856,4 +2900,26 @@ private:
 			throw new AssemblyError("Can't skip over this");
 	}
 
+}
+
+///
+unittest {
+	import std.functional : toDelegate;
+	import std.stdio : writeln;
+	import xasm : Assembler;
+
+	string[string] sources = [
+		"src.asx": " org $600\nlbl equ *\n dta $42\n"
+	];
+
+	SourceReader sourceReader = (string path) => sources[path].representation;
+	DiagnosticSink diagnosticSink = toDelegate((in Diagnostic diag) => stderr.writeln(diag));
+
+	auto assembler = new Assembler(sourceReader, null, diagnosticSink);
+
+	assembler.assemble("src.asx");
+
+	assert( assembler.object == [0xff, 0xff, 0x00, 0x06, 0x00, 0x06, 0x42]);
+	assert( assembler.getLabel("lbl").value == 0x600);
+	assert(!assembler.getLabel("foo"));
 }

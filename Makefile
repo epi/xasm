@@ -11,13 +11,16 @@ SEVENZIP = 7z a -mx=9 -bd -bso0
 
 SOURCES = source/app.d source/xasm/package.d
 
-all: xasm$(EXEEXT) xasm.html
+all: xasm$(EXEEXT) xasm.html libxasm.html
 
 xasm$(EXEEXT): $(SOURCES)
 	dmd -of$@ -O -release $^
 
 xasm.html: xasm.1.asciidoc
 	asciidoc -o - $< | sed -e "s/527bbd;/20a0a0;/" >$@
+
+libxasm.html: source/xasm/package.d
+	dmd -D -Df$@ -o- $^
 
 xasm.1: xasm.1.asciidoc
 	a2x -f manpage $<
@@ -68,7 +71,7 @@ osx/bin:
 	mkdir -p osx && ln -s /usr/local/bin $@
 
 clean:
-	$(RM) xasm xasm.exe xasm.obj xasm.html xasm.1 signed
+	$(RM) xasm xasm.exe xasm.obj xasm.html libxasm.html xasm.1 signed
 	rm -rf osx
 
 .PHONY: all install uninstall install-scite uninstall-scite dist srcdist MANIFEST deb osx clean
