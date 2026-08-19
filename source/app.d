@@ -175,11 +175,6 @@ char[32] listingLine;
 int listingColumn;
 string lastListedFilename = null;
 
-File objectStream;
-
-int objectBytes = 0;
-
-
 bool getOption(char letter) {
 	assert(letter >= 'a' && letter <= 'z');
 	return options[letter - 'a'];
@@ -1092,18 +1087,6 @@ void recordSource(string filename) {
 		makeSources ~= filename;
 }
 
-File openOutputFile(string filename, string msg) {
-	if (filename == "-")
-		return stdout;
-	if (!getOption('q'))
-		messageStream.writeln(msg);
-	try {
-		return File(filename, "wb");
-	} catch (Exception e) {
-		throw new AssemblyError(e.msg);
-	}
-}
-
 void listNibble(int x) {
 	listingLine[listingColumn++] = cast(char) (x <= 9 ? x + '0' : x + ('A' - 10));
 }
@@ -1173,23 +1156,14 @@ void listLabelTable(ListingSink sink) {
 
 }
 
-version (unittest) ubyte[] objectBuffer;
+Appender!(ubyte[]) objectBuffer;
 
 void objectByte(ubyte b) {
-	version (unittest) {
-		objectBuffer ~= b;
-	} else {
+	version (unittest) {} else {
 		assert(pass2);
 		if (!optionObject) return;
-		if (!objectStream.isOpen)
-			objectStream = openOutputFile(objectFilename, "Writing object file...");
-		try {
-			objectStream.write(cast(char) b);
-		} catch (Exception e) {
-			throw new AssemblyError("Error writing object file");
-		}
 	}
-	objectBytes++;
+	objectBuffer.put(b);
 }
 
 void objectWord(ushort w) {
@@ -2224,7 +2198,7 @@ void setOrigin(int addr, OrgModifier modifier) {
 					throw new AssemblyError("Cannot generate an empty block");
 				return;
 			}
-			if (modifier == OrgModifier.FORCE_FFFF || objectBytes == 0) {
+			if (modifier == OrgModifier.FORCE_FFFF || objectBuffer.data.length == 0) {
 				assert(requestedHeader || addr != loadingOrigin);
 				originWord(0xffff, '>');
 				listingLine[listingColumn++] = ' ';
@@ -2628,11 +2602,11 @@ void assemblyInstruction(string instruction) {
 }
 
 version (unittest) ubyte[] testInstruction(string l) {
-	objectBuffer.length = 0;
+	objectBuffer.clear();
 	line = l;
 	column = 0;
 	assemblyInstruction(readInstruction());
-	return objectBuffer;
+	return objectBuffer.data;
 }
 
 unittest {
@@ -2839,10 +2813,10 @@ unittest {
 	sourceFiles[""] = " lda:sne:ldy:inx $1234".representation;
 	assemblyFile("");
 	pass2 = true;
-	objectBuffer.length = 0;
+	objectBuffer.clear();
 	assemblyFile("");
-	writefln!"%(%02x%)"(objectBuffer);
-	assert(objectBuffer == [0xad, 0x34, 0x12, 0xd0, 0x03, 0xac, 0x34, 0x12, 0xe8]);
+	writefln!"%(%02x%)"(objectBuffer.data);
+	assert(objectBuffer.data == [0xad, 0x34, 0x12, 0xd0, 0x03, 0xac, 0x34, 0x12, 0xe8]);
 }
 
 void assemblyPass() {
@@ -2972,6 +2946,24 @@ void writeLabelTable() {
 	listLabelTable((const(char)[] line) { listingStream.writeln(line); });
 }
 
+void writeObjectFile(const(ubyte)[] object) {
+	if (object.length == 0)
+		return;
+	if (objectFilename == "-") {
+		stdout.rawWrite(object);
+		return;
+	}
+	if (!getOption('q'))
+		messageStream.writeln("Writing object file...");
+	try {
+		auto stream = File(objectFilename, "wb");
+		stream.rawWrite(object);
+		stream.close();
+	} catch (Exception e) {
+		throw new AssemblyError("Error writing object file");
+	}
+}
+
 int main(string[] args) {
 	diagnostics = toDelegate(&reportDiagnostic);
 	readSource = toDelegate(&readSourceFile);
@@ -3068,25 +3060,20 @@ int main(string[] args) {
 			assemblyPass();
 			pass2 = true;
 			assemblyPass();
+			writeObjectFile(objectBuffer.data);
 			if (getOption('t') && labelTable.length > 0)
 				writeLabelTable();
 		} catch (AssemblyError e) {
 			warning(e.msg, true);
 			exitCode = 2;
-			if (objectFilename != "-") {
-				objectStream.close();
-				core.stdc.stdio.remove(toStringz(objectFilename));
-			}
 		}
 		if (listingStream != stdout)
 			listingStream.close();
-		if (objectStream != stdout)
-			objectStream.close();
 		if (exitCode <= 1) {
 			if (!getOption('q')) {
 				messageStream.writefln("%d lines of source assembled", totalLines);
-				if (objectBytes > 0)
-					messageStream.writefln("%d bytes written to the object file", objectBytes);
+				if (objectBuffer.data.length > 0)
+					messageStream.writefln("%d bytes written to the object file", objectBuffer.data.length);
 			}
 			if (getOption('m')) {
 				messageStream.writef("%s:", makeEscape(objectFilename));
