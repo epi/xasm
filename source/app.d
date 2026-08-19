@@ -33,6 +33,9 @@ version (Windows) {
 	import core.sys.windows.windows;
 }
 
+alias SourceReader = immutable(ubyte)[] delegate(string path);
+alias BinaryReader = immutable(ubyte)[] delegate(string path, long offset, long length);
+
 const string TITLE = "xasm 3.2.1";
 
 File messageStream;
@@ -194,6 +197,8 @@ struct Diagnostic {
 alias DiagnosticSink = void delegate(in Diagnostic d);
 
 DiagnosticSink diagnostics;
+SourceReader readSource;
+BinaryReader readBinary;
 
 void warning(string msg, bool error = false) {
 	diagnostics(Diagnostic(
@@ -1080,14 +1085,9 @@ string makeEscape(string s) {
 	return s.replace("$", "$$");
 }
 
-File openInputFile(string filename) {
+void recordSource(string filename) {
 	if (find(makeSources, filename).empty)
 		makeSources ~= filename;
-	try {
-		return File(filename);
-	} catch (Exception e) {
-		throw new AssemblyError(e.msg);
-	}
 }
 
 File openOutputFile(string filename, string msg) {
@@ -2308,24 +2308,14 @@ void assemblyIns() {
 			length = value;
 		}
 	}
-	File stream = openInputFile(filename);
-	try {
-		stream.seek(offset, offset >= 0 ? SEEK_SET : SEEK_END);
-	} catch (Exception e) {
-		throw new AssemblyError("Error seeking file");
-	}
 	if (inOpcode)
 		length = 1;
-	while (length != 0) {
-		ubyte[1] b;
-		if (stream.rawRead(b).length != 1) {
-			if (length > 0)
-				throw new AssemblyError("File is too short");
-			break;
-		}
-		putByte(b[0]);
-		if (length > 0) length--;
-	}
+	recordSource(filename);
+	immutable(ubyte)[] data = readBinary(filename, offset, length);
+	if (length >= 0 && data.length < length)
+		throw new AssemblyError("File is too short");
+	foreach (ubyte b; data)
+		putByte(b);
 }
 
 void assemblyInstruction(string instruction) {
@@ -2808,14 +2798,13 @@ void assemblyLine() {
 
 void assemblyFile(string filename) {
 	immutable(ubyte)[] source = sourceFiles.require(filename, {
-			File stream = stdin;
 			if (filename != "-") {
 				filename = filename.defaultExtension("asx");
 				if (getOption('p'))
 					filename = absolutePath(filename);
-				stream = openInputFile(filename);
+				recordSource(filename);
 			}
-			return stream.byChunk(65536).joiner.array.assumeUnique;
+			return readSource(filename);
 		}());
 
 	string oldFilename = currentFilename;
@@ -2931,8 +2920,38 @@ void reportDiagnostic(in Diagnostic d) {
 	exitCode = max(exitCode, d.severity == Severity.error ? 2 : 1);
 }
 
+immutable(ubyte)[] readSourceFile(string path) {
+	try {
+		File stream = path == "-" ? stdin : File(path);
+		return stream.byChunk(65536).joiner.array.assumeUnique;
+	} catch (Exception e) {
+		throw new AssemblyError(e.msg);
+	}
+}
+
+immutable(ubyte)[] readBinaryFile(string path, long offset, long length) {
+	File f;
+	try {
+		f = File(path);
+	} catch (Exception e) {
+		throw new AssemblyError(e.msg);
+	}
+	try {
+		f.seek(offset, offset >= 0 ? SEEK_SET : SEEK_END);
+	} catch (Exception e) {
+		throw new AssemblyError("Error seeking file");
+	}
+	if (length < 0)
+		return f.byChunk(65536).joiner.array.assumeUnique;
+	ubyte[] buffer = new ubyte[cast(size_t) length];
+	return f.rawRead(buffer).assumeUnique;
+}
+
 int main(string[] args) {
 	diagnostics = toDelegate(&reportDiagnostic);
+	readSource = toDelegate(&readSourceFile);
+	readBinary = toDelegate(&readBinaryFile);
+
 	for (int i = 1; i < args.length; i++) {
 		string arg = args[i];
 		if (isOption(arg)) {
