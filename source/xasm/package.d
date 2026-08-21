@@ -161,6 +161,7 @@ private:
 	bool optionObject; // opt o
 	bool optionUnusedLabels; // opt u
 	bool optionHwRegisters = true; // opt ^
+	bool option65C02; // opt c
 
 	string currentFilename;
 	int lineNo;
@@ -1383,6 +1384,11 @@ private:
 		throw new AssemblyError("Illegal addressing mode");
 	}
 
+	void require65C02() {
+		if (!option65C02)
+			throw new AssemblyError("65C02 instruction (enable with OPT C+)");
+	}
+
 	void addrModeForMove(int move) {
 		final switch (move) {
 		case 0:
@@ -1405,8 +1411,18 @@ private:
 			putByte(prefix);
 		switch (addrMode & AddrMode.STANDARD_MASK) {
 		case AddrMode.ACCUMULATOR:
-		case AddrMode.INDIRECT:
 			illegalAddrMode();
+			break;
+		case AddrMode.INDIRECT:
+			// 65C02 zero page indirect, e.g. LDA (zp)
+			if (!option65C02)
+				illegalAddrMode();
+			putByte(cast(ubyte) (b + 0x12));
+			if (inOpcode)
+				break;
+			if (pass2 && (value < 0 || value > 0xff))
+				throw new AssemblyError("Value out of range");
+			putByte(cast(ubyte) value);
 			break;
 		case AddrMode.IMMEDIATE:
 			if (b == 0x80) {
@@ -1452,11 +1468,17 @@ private:
 		readAddrMode();
 		switch (addrMode & AddrMode.STANDARD_MASK) {
 		case AddrMode.ACCUMULATOR:
-			if (b == 0xc0 || b == 0xe0) {
-				// INC @, DEC @
-				illegalAddrMode();
+			if (b == 0xe0) {
+				// INC @ (65C02)
+				require65C02();
+				putByte(0x1a);
+			} else if (b == 0xc0) {
+				// DEC @ (65C02)
+				require65C02();
+				putByte(0x3a);
+			} else {
+				putByte(cast(ubyte) (b + 0xa));
 			}
-			putByte(cast(ubyte) (b + 0xa));
 			break;
 		case AddrMode.ABSOLUTE:
 			putCommand(cast(ubyte) (b + 0xe));
@@ -1595,6 +1617,53 @@ private:
 		case AddrMode.ZEROPAGE:
 			putCommand(0x24);
 			break;
+		case AddrMode.IMMEDIATE:
+			require65C02();
+			putCommand(0x89);
+			break;
+		case AddrMode.ABSOLUTE_X:
+			require65C02();
+			putCommand(0x3c);
+			break;
+		case AddrMode.ZEROPAGE_X:
+			require65C02();
+			putCommand(0x34);
+			break;
+		default:
+			illegalAddrMode();
+		}
+	}
+
+	void assemblyStz() {
+		readAddrMode();
+		switch (addrMode) {
+		case AddrMode.ABSOLUTE:
+			putCommand(0x9c);
+			break;
+		case AddrMode.ZEROPAGE:
+			putCommand(0x64);
+			break;
+		case AddrMode.ABSOLUTE_X:
+			putCommand(0x9e);
+			break;
+		case AddrMode.ZEROPAGE_X:
+			putCommand(0x74);
+			break;
+		default:
+			illegalAddrMode();
+		}
+	}
+
+	void assemblyTestBits(ubyte b) {
+		// b is the absolute opcode (TSB $0C, TRB $1C); zero page is 8 less
+		readAddrMode();
+		switch (addrMode) {
+		case AddrMode.ABSOLUTE:
+			putCommand(b);
+			break;
+		case AddrMode.ZEROPAGE:
+			putCommand(cast(ubyte) (b - 8));
+			break;
 		default:
 			illegalAddrMode();
 		}
@@ -1609,9 +1678,15 @@ private:
 			putCommand(0x4c);
 			break;
 		case AddrMode.INDIRECT:
-			if (pass2 && (value & 0xff) == 0xff)
+			if (!option65C02 && pass2 && (value & 0xff) == 0xff)
 				warning("Buggy indirect jump");
 			putCommand(0x6c);
+			break;
+		case AddrMode.INDIRECT_X:
+			require65C02();
+			putByte(0x7c);
+			if (!inOpcode)
+				putWord(cast(ushort) value);
 			break;
 		default:
 			illegalAddrMode();
@@ -2187,6 +2262,10 @@ private:
 		readSpaces();
 		while (!eol()) {
 			switch (line[column++]) {
+			case 'C':
+			case 'c':
+				option65C02 = readOption();
+				break;
 			case 'F':
 			case 'f':
 				optionFill = readOption();
@@ -2391,6 +2470,10 @@ private:
 		case "BPL":
 			assemblyBranch(0x10);
 			break;
+		case "BRA":
+			require65C02();
+			assemblyBranch(0x80);
+			break;
 		case "BRK":
 			putByte(0x00);
 			break;
@@ -2556,11 +2639,27 @@ private:
 		case "PHP":
 			putByte(0x08);
 			break;
+		case "PHX":
+			require65C02();
+			putByte(0xda);
+			break;
+		case "PHY":
+			require65C02();
+			putByte(0x5a);
+			break;
 		case "PLA":
 			putByte(0x68);
 			break;
 		case "PLP":
 			putByte(0x28);
+			break;
+		case "PLX":
+			require65C02();
+			putByte(0xfa);
+			break;
+		case "PLY":
+			require65C02();
+			putByte(0x7a);
 			break;
 		case "RCC":
 			assemblyRepeat(0x90);
@@ -2640,6 +2739,10 @@ private:
 		case "STY":
 			assemblySty(0);
 			break;
+		case "STZ":
+			require65C02();
+			assemblyStz();
+			break;
 		case "SUB":
 			assemblyAccumulator(0xe0, 0x38, 0);
 			break;
@@ -2654,6 +2757,14 @@ private:
 			break;
 		case "TAY":
 			putByte(0xa8);
+			break;
+		case "TRB":
+			require65C02();
+			assemblyTestBits(0x1c);
+			break;
+		case "TSB":
+			require65C02();
+			assemblyTestBits(0x0c);
 			break;
 		case "TSX":
 			putByte(0xba);
@@ -2691,6 +2802,54 @@ private:
 			assert(testInstruction("dta 5,d'Foo'*,a($4589)") == representation(hexString!"05a6efef8945"));
 			assert(testInstruction("dta r(1,12,123,1234567890,12345678900000,.5,.03,000.1664534589,1e97)")
 			== representation(hexString!"400100000000 401200000000 410123000000 441234567890 461234567890 3f5000000000 3f0300000000 3f1664534589 701000000000"));
+		}
+	}
+
+	unittest {
+		auto a = testAssembler();
+		with (a) {
+			// 65C02 instructions are rejected unless OPT C+ is enabled
+			bool threw = false;
+			try { testInstruction("stz $80"); } catch (AssemblyError) { threw = true; }
+			assert(threw);
+			threw = false;
+			try { testInstruction("lda ($80)"); } catch (AssemblyError) { threw = true; }
+			assert(threw);
+			threw = false;
+			try { testInstruction("inc @"); } catch (AssemblyError) { threw = true; }
+			assert(threw);
+			option65C02 = true;
+			// new mnemonics
+			assert(testInstruction("phx") == representation(hexString!"da"));
+			assert(testInstruction("phy") == representation(hexString!"5a"));
+			assert(testInstruction("plx") == representation(hexString!"fa"));
+			assert(testInstruction("ply") == representation(hexString!"7a"));
+			assert(testInstruction("stz $12") == representation(hexString!"6412"));
+			assert(testInstruction("stz $1234") == representation(hexString!"9c3412"));
+			assert(testInstruction("stz $12,x") == representation(hexString!"7412"));
+			assert(testInstruction("stz $1234,x") == representation(hexString!"9e3412"));
+			assert(testInstruction("trb $12") == representation(hexString!"1412"));
+			assert(testInstruction("trb $1234") == representation(hexString!"1c3412"));
+			assert(testInstruction("tsb $12") == representation(hexString!"0412"));
+			assert(testInstruction("tsb $1234") == representation(hexString!"0c3412"));
+			// new addressing modes on existing mnemonics
+			assert(testInstruction("inc @") == representation(hexString!"1a"));
+			assert(testInstruction("dec @") == representation(hexString!"3a"));
+			assert(testInstruction("ora ($00)") == representation(hexString!"1200"));
+			assert(testInstruction("and ($12)") == representation(hexString!"3212"));
+			assert(testInstruction("eor ($34)") == representation(hexString!"5234"));
+			assert(testInstruction("adc ($56)") == representation(hexString!"7256"));
+			assert(testInstruction("sta ($78)") == representation(hexString!"9278"));
+			assert(testInstruction("lda ($9a)") == representation(hexString!"b29a"));
+			assert(testInstruction("cmp ($bc)") == representation(hexString!"d2bc"));
+			assert(testInstruction("sbc ($de)") == representation(hexString!"f2de"));
+			assert(testInstruction("bit #$40") == representation(hexString!"8940"));
+			assert(testInstruction("bit $12,x") == representation(hexString!"3412"));
+			assert(testInstruction("bit $1234,x") == representation(hexString!"3c3412"));
+			assert(testInstruction("jmp ($1234,x)") == representation(hexString!"7c3412"));
+			// BRA is a relative branch
+			origin = 0x600;
+			assert(testInstruction("bra $602") == representation(hexString!"8000"));
 		}
 	}
 
@@ -2892,6 +3051,7 @@ private:
 		loadOrigin = -1;
 		loadingOrigin = -1;
 		blockIndex = -1;
+		option65C02 = false;
 		optionFill = false;
 		option5200 = false;
 		optionHeaders = true;
