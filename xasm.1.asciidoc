@@ -297,8 +297,9 @@ here equ *
 
 [[new_opt]]*OPT* - set assembler options::
 
-Seven options are available:
+Eight options are available:
 
+- `C` - accept <<new_65c02,65C02 instructions>>
 - `F` - fill the space between noncontiguous memory areas with `$FF` bytes
 - `G` - Atari 5200 mode for hardware register shorthand notation (`^xx`)
 - `H` - generate Atari executable headers
@@ -309,13 +310,14 @@ Seven options are available:
 
 +
 You can turn any of these on or off.
-The default (before the first `OPT`) is `opt f-g-h+l+o+u+^+`.
+The default (before the first `OPT`) is `opt c-f-g-h+l+o+u+^+`.
 For compatibility with MADS, `opt ?+` is accepted and ignored.
 Examples:
 +
 ------------------------------------------------------------------------------
  opt l-     listing off
  opt l+o-   listing on, object file off
+ opt c+     accept 65C02 instructions
  opt f+g+h- useful for Atari 5200 cartridges - raw output, 5200 hw regs
  opt ^-     disable hardware register shorthand notation (`^xx`)
  opt ?+     MADS compatibility, no effect
@@ -715,6 +717,40 @@ and pseudo commands, except for `MWA`, `MWX` and `MWY`:
  cmd (z),0- =  ldy #0    : cmd (z),y : dey
 ------------------------------------------
 
+65C02 INSTRUCTIONS
+------------------
+
+[[new_65c02]]*xasm* assembles the standard 6502 (NMOS) instruction set by default.
+`OPT C+` additionally enables the 65C02 instructions (as available on the
+Atari Lynx console).
+The Rockwell bit-manipulation instructions (`RMB`, `SMB`, `BBR`, `BBS`) and
+power-saving instructions (`WAI`, `STP`) are not included.
+`OPT C-` turns 65C02 mode back off.
+
+The following new instructions become available:
+
+[cols="^m,d",options="header"]
+|================================================
+|Instruction|Description
+|BRA        |branch always (relative)
+|PHX / PHY  |push X / Y register
+|PLX / PLY  |pull X / Y register
+|STZ        |store zero (`abs`, `zp`, `abs,x`, `zp,x`)
+|TRB        |test and reset bits (`abs`, `zp`)
+|TSB        |test and set bits (`abs`, `zp`)
+|================================================
+
+The following new addressing modes are added to existing instructions:
+
+[cols="m,d",options="header"]
+|====================================================================
+|Example|Description
+|inc @  |increment / decrement the accumulator (also `dec @`)
+|lda ($80)|zero page indirect, for `ADC AND CMP EOR LDA ORA SBC STA`
+|bit #$40|`BIT` with immediate, `zp,x` and `abs,x` addressing
+|jmp ($1234,x)|absolute indexed indirect jump
+|====================================================================
+
 HISTORY
 -------
 
@@ -724,6 +760,7 @@ Version ?.?.? (20??-??-??)
   (by Adrian Matoga)
 - <<new_opt,`OPT ^-` disables the hardware register shorthand notation
   (`^xx`), `OPT ^+` re-enables it>> (by Adrian Matoga)
+- <<new_65c02,`OPT C+` enables 65C02 instructions>> (by Adrian Matoga)
 
 Version 3.2.1 (2022-12-08)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
