@@ -2923,3 +2923,39 @@ unittest {
 	assert( assembler.getLabel("lbl").value == 0x600);
 	assert(!assembler.getLabel("foo"));
 }
+
+// listIncludedFiles
+unittest {
+	import std.functional : toDelegate;
+
+	string[string] sources = [
+		"main.asx": " org $600\n icl 'inc.asx'\n dta $42\n",
+		"inc.asx": " dta $37\n"
+	];
+
+	string[] listing(bool listIncludedFiles) {
+		auto assembler = new Assembler(
+			(string path) => sources[path].representation,
+			null,
+			toDelegate((in Diagnostic diag) => stderr.writeln(diag)));
+		string[] lines;
+		assembler.listIncludedFiles = listIncludedFiles;
+		assembler.listingSink = (const(char)[] line) { lines ~= line.idup; };
+		assembler.assemble("main.asx");
+		assert(assembler.object == [0xff, 0xff, 0x00, 0x06, 0x01, 0x06, 0x37, 0x42]);
+		return lines;
+	}
+
+	auto listed = listing(true);
+	assert(listed.canFind!(l => l.canFind("icl 'inc.asx'")));
+	assert(listed.canFind("Source: inc.asx"));
+	assert(listed.canFind!(l => l.canFind("dta $37")));
+	assert(listed.canFind("Source: main.asx"));
+	assert(listed.canFind!(l => l.canFind("dta $42")));
+
+	auto notListed = listing(false);
+	assert(notListed.canFind!(l => l.canFind("icl 'inc.asx'")));
+	assert(!notListed.canFind("Source: inc.asx"));
+	assert(!notListed.canFind!(l => l.canFind("dta $37")));
+	assert(notListed.canFind!(l => l.canFind("dta $42")));
+}
