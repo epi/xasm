@@ -125,7 +125,12 @@ void openListingFile(string filename, string msg) {
 	} else {
 		if (!getOption('q'))
 			messageStream.writeln(msg);
-		listingStream = File(filename, "wb");
+		filename = absolutePath(filename);
+		// Don't overwrite listing with label table.
+		if (listingStream.name != filename) {
+			// Assignment implicitly closes listing.
+			listingStream = File(filename, "wb");
+		}
 	}
 	listingStream.writeln(TITLE);
 }
@@ -141,13 +146,9 @@ void ensureListingOpen(string msg) {
 
 void writeLabelTable(Assembler assembler) {
 	string filename = optionParameters['t' - 'a'];
-	if (filename !is null && listingStream.isOpen && listingStream != stdout)
-		listingStream.close();
-	if (!listingStream.isOpen) {
-		if (filename is null)
-			filename = sourceFilename.setExtension("lst");
-		openListingFile(filename, "Writing label table...");
-	}
+	if (filename is null)
+		filename = sourceFilename.setExtension("lst");
+	openListingFile(filename, "Writing label table...");
 	assembler.listLabelTable((const(char)[] line) { listingStream.writeln(line); });
 }
 
@@ -160,9 +161,8 @@ void writeObjectFile(const(ubyte)[] object) {
 	}
 	if (!getOption('q'))
 		messageStream.writeln("Writing object file...");
-	auto stream = File(objectFilename, "wb");
-	stream.rawWrite(object);
-	stream.close();
+	auto f = File(objectFilename, "wb");
+	f.rawWrite(object);
 }
 
 int main(string[] args) {
@@ -272,8 +272,6 @@ int main(string[] args) {
 			reportDiagnostic(Diagnostic(Severity.error, "", 0, null, e.msg));
 			exitCode = 2;
 		}
-		if (listingStream != stdout)
-			listingStream.close();
 		if (exitCode <= 1) {
 			if (!getOption('q')) {
 				messageStream.writefln("%d lines of source assembled", assembler.linesAssembled);
