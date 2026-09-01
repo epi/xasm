@@ -45,7 +45,7 @@ File listingStream;
 
 string[] makeSources = null;
 
-void recordSource(string filename) {
+void registerSource(string filename) {
 	if (find(makeSources, filename).empty)
 		makeSources ~= filename;
 }
@@ -86,9 +86,9 @@ void reportDiagnostic(in Diagnostic d) {
 		SetConsoleTextAttribute(stderrHandle, (csbi.wAttributes & ~0xf) | (d.severity == Severity.error ? 12 : 14));
 		scope (exit) SetConsoleTextAttribute(stderrHandle, csbi.wAttributes);
 	}
-	if (d.sourceLine !is null)
-		stderr.writeln(d.sourceLine);
-	stderr.writefln("%s (%d) %s: %s", d.filename, d.line,
+	if (d.line !is null)
+		stderr.writeln(d.line);
+	stderr.writefln("%s (%d) %s: %s", d.filename, d.lineNo,
 		d.severity == Severity.error ? "ERROR" : "WARNING", d.message);
 	exitCode = max(exitCode, d.severity == Severity.error ? 2 : 1);
 }
@@ -98,16 +98,15 @@ immutable(ubyte)[] readSourceFile(string filename) {
 		filename = filename.defaultExtension("asx");
 		if (getOption('p'))
 			filename = absolutePath(filename);
-		recordSource(filename);
+		registerSource(filename);
 	}
-	File stream = filename == "-" ? stdin : File(filename);
-	return stream.byChunk(65536).joiner.array.assumeUnique;
+	File f = filename == "-" ? stdin : File(filename);
+	return f.byChunk(65536).joiner.array.assumeUnique;
 }
 
-immutable(ubyte)[] readBinaryFile(string path, long offset, long length) {
-	recordSource(path);
-	File f;
-	f = File(path);
+immutable(ubyte)[] readBinaryFile(string path, int offset, int length) {
+	registerSource(path);
+	File f = File(path);
 	try {
 		f.seek(offset, offset >= 0 ? SEEK_SET : SEEK_END);
 	} catch (Exception e) {

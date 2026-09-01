@@ -35,8 +35,8 @@ enum Severity { warning, error }
 struct Diagnostic {
 	Severity severity; /// Whether this diagnostic is a warning or a fatal error.
 	string filename; /// Name of the source file the diagnostic refers to.
-	int line; /// 1-based line number within `filename`.
-	string sourceLine; /// Text of the offending source line.
+	int lineNo; /// 1-based line number within `filename`.
+	string line; /// Text of the offending source line.
 	string message; /// Human-readable description of the problem.
 }
 
@@ -48,7 +48,7 @@ alias SourceReader = immutable(ubyte)[] delegate(string path);
 
 /// Callback that returns `length` bytes starting at `offset` from the binary
 /// file at `path`, as used by binary include directives.
-alias BinaryReader = immutable(ubyte)[] delegate(string path, long offset, long length);
+alias BinaryReader = immutable(ubyte)[] delegate(string path, int offset, int length);
 
 /// Callback that receives the assembly listing one line at a time.
 alias ListingSink = void delegate(const(char)[] line);
@@ -64,7 +64,7 @@ struct Label {
 	int value; /// The value assigned to the label.
 	bool unused = true; /// True until the label is referenced somewhere.
 	bool unknownInPass1 = false; /// True if the value was not yet known during pass 1.
-	bool passed = false; /// True once the label's definition has been processed.
+	bool passed = false; /// True once the label's definition was encountered in the current pass.
 }
 
 /// Assembles xasm 6502 source into an object file.
@@ -132,7 +132,7 @@ class Assembler {
 				value = -value;
 			}
 			immutable fmt = (l.value & 0xffff0000) != 0 ? "%s%s %s%08X %s" : "%s%s     %s%04X %s";
-			sink(fmt.format(
+			sink(format(fmt,
 				l.unused ? 'n' : ' ',
 				l.unknownInPass1 ? '2' : ' ',
 				sign, value, name));
@@ -143,7 +143,7 @@ private:
 	version (unittest) static Assembler testAssembler() {
 		return new Assembler(
 			(string path) => (immutable(ubyte)[]).init,
-			(string path, long offset, long length) => (immutable(ubyte)[]).init,
+			(string path, int offset, int length) => (immutable(ubyte)[]).init,
 			null);
 	}
 
@@ -268,7 +268,7 @@ private:
 		}
 	}
 
-	immutable(ubyte)[] readBinary(string path, long offset, long length) {
+	immutable(ubyte)[] readBinary(string path, int offset, int length) {
 		try {
 			return binaryReader(path, offset, length);
 		} catch (Exception e) {
