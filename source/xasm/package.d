@@ -103,7 +103,7 @@ class Assembler {
 			objectBuffer.clear();
 			assemblyPass();
 		} catch (AssemblyError e) {
-			warning(e.msg, true);
+			reportDiagnostics(e.msg, Severity.error);
 		}
 	}
 
@@ -276,10 +276,12 @@ private:
 		}
 	}
 
-	void warning(string msg, bool error = false) {
-		diagnostics(Diagnostic(
-			error ? Severity.error : Severity.warning,
-			currentFilename, lineNo, line, msg));
+	void reportDiagnostics(string msg, Severity s) {
+		diagnostics(Diagnostic(s, currentFilename, lineNo, line, msg));
+	}
+
+	void warning(string msg) {
+		reportDiagnostics(msg, Severity.warning);
 	}
 
 	void illegalCharacter() {
