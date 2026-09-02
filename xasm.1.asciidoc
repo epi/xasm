@@ -713,6 +713,14 @@ and pseudo commands, except for `MWA`, `MWX` and `MWY`:
 HISTORY
 -------
 
+Version ?.?.? (20??-??-??)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+- *xasm* can now be used as a link:libxasm.html[library] in any D program
+  (by Adrian Matoga)
+- fixed writing the */t* label table: it no longer closes standard output
+  when the listing goes to `-`, nor overwrites the listing file when both
+  */l* and */t* name the same file (by Adrian Matoga)
+
 Version 3.2.1 (2022-12-08)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 - source can optionally be read from standard input, and object can be
