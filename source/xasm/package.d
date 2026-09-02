@@ -64,7 +64,7 @@ struct Label {
 	int value; /// The value assigned to the label.
 	bool unused = true; /// True until the label is referenced somewhere.
 	bool unknownInPass1 = false; /// True if the value was not yet known during pass 1.
-	bool passed = false; /// True once the label's definition was encountered in the current pass.
+	bool passed = false; /// True once the label's definition was encountered in pass 2.
 }
 
 /// Assembles xasm 6502 source into an object file.
