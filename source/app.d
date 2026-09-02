@@ -42,6 +42,9 @@ string objectFilename = null;
 int exitCode = 0;
 
 File listingStream;
+string listingFilename;     // -l FILENAME, "-" or <source>.lst
+string labelTableFilename;  // -t FILENAME, "-" or listingFilename
+string listingDestination;  // where listingStream currently writes
 
 string[] makeSources = null;
 
@@ -118,36 +121,29 @@ immutable(ubyte)[] readBinaryFile(string path, int offset, int length) {
 	return f.rawRead(buffer).assumeUnique;
 }
 
+string listingOption(char letter, string fallback) {
+	string filename = optionParameters[letter - 'a'];
+	if (filename is null)
+		return fallback;
+	return filename == "-" ? "-" : buildNormalizedPath(absolutePath(filename));
+}
+
 void openListingFile(string filename, string msg) {
+	if (filename == listingDestination)
+		return;
 	if (filename == "-") {
 		listingStream = stdout;
 	} else {
 		if (!getOption('q'))
 			messageStream.writeln(msg);
-		filename = absolutePath(filename);
-		// Don't overwrite listing with label table.
-		if (listingStream.name != filename) {
-			// Assignment implicitly closes listing.
-			listingStream = File(filename, "wb");
-		}
+		listingStream = File(filename, "wb");  // implicitly closes the previous file
 	}
+	listingDestination = filename;
 	listingStream.writeln(TITLE);
 }
 
-void ensureListingOpen(string msg) {
-	if (listingStream.isOpen)
-		return;
-	string filename = optionParameters['l' - 'a'];
-	if (filename is null)
-		filename = sourceFilename.setExtension("lst");
-	openListingFile(filename, msg);
-}
-
 void writeLabelTable(Assembler assembler) {
-	string filename = optionParameters['t' - 'a'];
-	if (filename is null)
-		filename = sourceFilename.setExtension("lst");
-	openListingFile(filename, "Writing label table...");
+	openListingFile(labelTableFilename, "Writing label table...");
 	assembler.listLabelTable((const(char)[] line) { listingStream.writeln(line); });
 }
 
@@ -249,6 +245,9 @@ int main(string[] args) {
 `);
 			return exitCode;
 		}
+		listingFilename = listingOption('l',
+			buildNormalizedPath(absolutePath(sourceFilename.setExtension("lst"))));
+		labelTableFilename = listingOption('t', listingFilename);
 		auto assembler = new Assembler(
 			toDelegate(&readSourceFile),
 			toDelegate(&readBinaryFile),
@@ -259,7 +258,7 @@ int main(string[] args) {
 		assembler.warnUnusedLabels = getOption('u');
 		if (getOption('l'))
 			assembler.listingSink = (const(char)[] line) {
-				ensureListingOpen("Writing listing file...");
+				openListingFile(listingFilename, "Writing listing file...");
 				listingStream.writeln(line);
 			};
 		assembler.assemble(sourceFilename);
