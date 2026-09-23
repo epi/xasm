@@ -304,17 +304,19 @@ Six options are available:
 - `U` - warn of unused labels
 
 +
+--
 You can turn any of these on or off.
 The default (before the first `OPT`) is `opt f-g-h+l+o+u+`.
 For compatibility with MADS, `opt ?+` is accepted and ignored.
 Examples:
-+
+
 ------------------------------------------------------------------------------
  opt l-     listing off
  opt l+o-   listing on, object file off
  opt f+g+h- useful for Atari 5200 cartridges - raw output, 5200 hw regs
  opt ?+     MADS compatibility, no effect
 ------------------------------------------------------------------------------
+--
 
 *ORG* - set the origin counter::
 
@@ -327,18 +329,19 @@ If Atari executable headers are enabled (`opt h+`), you can include an operand p
   at the beginning of the file (no need to include `f:` in the first `ORG`).
 
 +
+--
 Examples:
-+
+
 ---------------
  org $600
  org f:$700
 table org *+100
 ---------------
-+
+
 In the latter example `table` points to 100 bytes
 of uninitialized data (label is assigned with `*`
 before the `ORG` directive is executed).
-+
+
 [[new_orgr]]*xasm* supports code that is relocated at run time.
 Let's say you want your code to be located on page zero for best performance.
 You can't safely load it directly into this place,
@@ -346,7 +349,7 @@ so you load it at a different address and then move in your program.
 `org r:` changes the address that it used for code generation
 but not the address used for generating Atari executable headers.
 Example:
-+
+
 --------------------------------------
  org $8000
  ldx #code_length-1
@@ -359,14 +362,15 @@ code_zpage
  jmp * ; ... or something more sensible
 code_length equ *-code_zpage
 --------------------------------------
-+
+
 Note that both `*` and label definitions use the counter used
 for code generation. There is no direct access to the other counter.
 You can only calculate it:
-+
+
 ---------------------------------------
 where_am_i equ *-code_zpage+code_loaded
 ---------------------------------------
+--
 
 [[new_aln]]*ALN* - align the origin counter::
 
