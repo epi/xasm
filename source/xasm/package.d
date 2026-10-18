@@ -1329,7 +1329,7 @@ private:
 				listingColumn = 30;
 			}
 		}
-		if (optionObject && optionHeaders) {
+		if (optionHeaders) {
 			if (origin < 0)
 				throw new AssemblyError("No ORG specified");
 			if (!pass2) {
@@ -2513,7 +2513,7 @@ private:
 		if (!optionHeaders)
 			return;
 		bool requestedHeader = modifier != OrgModifier.NONE;
-		if (requestedHeader || loadingOrigin < 0 || (addr != loadingOrigin && !optionFill)) {
+		if (requestedHeader || loadingOrigin < 0 || !optionObject || (addr != loadingOrigin && !optionFill)) {
 			if (!pass2) {
 				blockEnds ~= cast(ushort) (addr - 1);
 				newBlock = true;
